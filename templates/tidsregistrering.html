@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no" />
+  <meta name="theme-color" content="#007BFF" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon-192.png" type="image/png" />
+  <title>Tidsregistrering</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Arial,sans-serif;background:#f4f4f8;padding-bottom:80px}
+    header{position:sticky;top:0;background:#007BFF;color:#fff;text-align:center;padding:15px;z-index:10}
+    header h1{margin:0;font-size:1.5em}
+    header span{display:block;font-size:.9em}
+    .container{max-width:600px;margin:0 auto;padding:10px}
+    .card{background:#fff;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,.1);margin-bottom:15px;padding:15px}
+    .row{display:flex;align-items:center;margin-bottom:10px}
+    .row label{flex:1;font-weight:bold}
+    .row input[type=time]{flex:2;padding:8px;border:1px solid #ccc;border-radius:4px}
+    input[type=text],select{width:100%;padding:8px;margin-bottom:10px;border:1px solid #ccc;border-radius:4px}
+    button{padding:8px 12px;border:none;border-radius:4px;background:#007BFF;color:#fff;cursor:pointer}
+    button.nu-knap{background:#28a745;margin-left:5px}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:10px}
+    th,td{border:1px solid #ddd;padding:6px;text-align:center;word-wrap:break-word}
+    th{background:#007BFF;color:#fff}
+    .a-tid{background:#d4edda}
+    .b-tid{background:#d1ecf1}
+    .bottom-bar{position:fixed;bottom:0;left:0;right:0;display:flex;background:#007BFF;z-index:10}
+    .bottom-bar button{flex:1;padding:15px;font-size:1em}
+    #btnOpdater{background:#6c757d}
+    .ny-knap{background:#ffc107;color:#000}
+    .pause-group{display:flex;justify-content:space-between;margin-top:10px}
+    .pause-group div{flex:1}
+    #sum b{font-weight:bold}
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Tidsregistrering</h1>
+  <span id="visDato"></span>
+  <span id="vagtStartVis">Vagtstart: –</span>
+</header>
+
+<div class="container" id="altIndhold">
+  <div class="card">
+    <input type="text" id="beredskab" placeholder="Beredskabsnavn" onchange="gemData()">
+    <div class="row">
+      <label for="starttid">Starttid</label>
+      <input type="time" id="starttid" onchange="gemData()">
+      <button class="nu-knap" onclick="indsætNu('starttid')">Nu</button>
+    </div>
+    <div class="row">
+      <label for="sluttid">Sluttid</label>
+      <input type="time" id="sluttid" onchange="gemData()">
+      <button class="nu-knap" onclick="indsætNu('sluttid')">Nu</button>
+    </div>
+    <button id="gemTurBtn" disabled onclick="tilføjTur()">Gem tur</button>
+  </div>
+
+  <div class="card">
+    <table id="turTabel">
+      <tr><th>Start</th><th>Slut</th><th>Total</th><th>A-tid</th><th>B-tid</th><th>Slet</th></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <label for="fremskudtPause">Fremskudt pause</label>
+    <select id="fremskudtPause" onchange="opdaterTabel()">
+      <option value="0">Ingen</option>
+      <option value="30">30 min</option>
+      <option value="60">60 min</option>
+    </select>
+    <div class="pause-group">
+      <div>
+        <strong>Pause 1</strong><br>
+        <label><input type="radio" name="pause1" value="Afbrudt" onclick="toggleRadio(this)"> Afbrudt</label><br>
+        <label><input type="radio" name="pause1" value="Ikke afholdt" onclick="toggleRadio(this)"> Ikke afholdt</label>
+      </div>
+      <div>
+        <strong>Pause 2</strong><br>
+        <label><input type="radio" name="pause2" value="Afbrudt" onclick="toggleRadio(this)"> Afbrudt</label><br>
+        <label><input type="radio" name="pause2" value="Ikke afholdt" onclick="toggleRadio(this)"> Ikke afholdt</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <p id="sum"><b>Total:</b> 0 min | <b>A-tid:</b> 0 min | <b>B-tid:</b> 0 min</p>
+    <p id="ekstra">1–4 minutter: 0 min (0 min)</p>
+    <p id="overtid">Overtid: 0 min</p>
+  </div>
+</div>
+
+<div class="bottom-bar">
+  <button id="btnOpdater">↻ Opdater</button>
+  <button onclick="gemSomBillede()">📷 Gem billede</button>
+  <button class="ny-knap" onclick="nyVagt()">🗑 Ny vagt</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+  let ture = [], aStart = null, vagtStartDato = null;
+
+  window.onload = () => {
+    const mt = localStorage.getItem("tidsregistreringMødetid"),
+          vs = localStorage.getItem("tidsregistreringVagtDato");
+    if (mt) aStart = minTid(mt);
+    if (vs) vagtStartDato = new Date(vs);
+    visDato(); hentData(); updateGemTurBtn();
+    document.getElementById('btnOpdater').onclick = () => location.reload();
+  };
+
+  function updateGemTurBtn() {
+    document.getElementById('gemTurBtn').disabled = (aStart === null);
+  }
+
+  function visDato() {
+    const nu = new Date();
+    document.getElementById('visDato').innerText =
+      nu.toLocaleDateString('da-DK',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    if (aStart !== null && vagtStartDato) {
+      const hh = String(Math.floor(aStart/60)).padStart(2,'0'),
+            mm = String(aStart%60).padStart(2,'0'),
+            d  = vagtStartDato.toLocaleDateString('da-DK',{day:'numeric',month:'long'});
+      document.getElementById('vagtStartVis').innerText =
+        `Vagtstart: ${d} kl. ${hh}:${mm}`;
+    }
+  }
+
+  function indsætNu(id) {
+    document.getElementById(id).value = new Date().toTimeString().slice(0,5);
+    gemData();
+  }
+
+  function nyVagt() {
+    if (!confirm("Start ny vagt og nulstil alt?")) return;
+    const mt = prompt("Vagtstart (HH:MM)","07:30");
+    if (!mt||!/^\d{2}:\d{2}$/.test(mt)) return alert("Ugyldigt format");
+    localStorage.setItem("tidsregistreringMødetid", mt);
+    aStart = minTid(mt);
+    vagtStartDato = new Date();
+    vagtStartDato.setHours(mt.split(':')[0], mt.split(':')[1], 0, 0);
+    localStorage.setItem("tidsregistreringVagtDato", vagtStartDato.toISOString());
+    ture = [];
+    document.querySelectorAll("input[type=time], input[type=text]").forEach(el => el.value = "");
+    document.getElementById('fremskudtPause').value = "0";
+    document.querySelectorAll("input[type=radio]").forEach(r => r.checked = false);
+    gemData(); opdaterTabel(); visDato(); updateGemTurBtn();
+  }
+
+  function tilføjTur() {
+    if (aStart === null) {
+      alert("Du skal først vælge din vagtstart. Tryk på 'Ny vagt'.");
+      return;
+    }
+    const s = document.getElementById('starttid').value,
+          e = document.getElementById('sluttid').value;
+    if (!s||!e) return alert("Udfyld start og sluttid");
+    ture.push({start:s,slut:e});
+    document.getElementById('starttid').value = "";
+    document.getElementById('sluttid').value = "";
+    gemData(); opdaterTabel();
+  }
+
+  function minTid(t) {
+    const [h,m] = t.split(':').map(Number);
+    return h*60 + m;
+  }
+
+  function beregnMinFraMødetid(tid) {
+    return ((tid - aStart + 1440) % 1440);
+  }
+
+  function beregnAB(ts,te) {
+    const sAbs = ts>=aStart?ts:ts+1440,
+          eAbs = te>=aStart?te:te+1440;
+    let total=0,a=0,b=0,o=0;
+    for(let m=sAbs; m<eAbs; m++){
+      const fm = beregnMinFraMødetid(m%1440);
+      if (fm<960) a++;
+      else if(fm<1440) b++;
+      else o++;
+      total++;
+    }
+    return {total,a,b,overtid:o};
+  }
+
+  function opdaterTabel() {
+    const scrollY=window.scrollY,
+          tbl = document.getElementById("turTabel");
+    tbl.innerHTML = `<tr><th>Start</th><th>Slut</th><th>Total</th>
+      <th>A-tid</th><th>B-tid</th><th>Slet</th></tr>`;
+    let sum={total:0,a:0,b:0,overtid:0};
+
+    ture.forEach((t,i)=>{
+      const ts=minTid(t.start), te=minTid(t.slut),
+            r=beregnAB(ts,te);
+      sum.total+=r.total; sum.a+=r.a; sum.b+=r.b; sum.overtid+=r.overtid;
+      tbl.innerHTML+=`<tr>
+        <td><input type="time" value="${t.start}"
+             onchange="ture[${i}].start=this.value;opdaterTabel()"></td>
+        <td><input type="time" value="${t.slut}"
+             onchange="ture[${i}].slut=this.value;opdaterTabel()"></td>
+        <td><b>${r.total}</b></td>
+        <td class="a-tid">${r.a}</td>
+        <td class="b-tid">${r.b}</td>
+        <td><button onclick="sletTur(${i})">🗑</button></td>
+      </tr>`;
+    });
+
+    const fp = parseInt(document.getElementById('fremskudtPause').value)||0,
+          aAfterPause = Math.max(sum.a - fp,0),
+          bundA = Math.min(aAfterPause,510),
+          bundB = (aAfterPause>510? aAfterPause-510:0) + sum.b,
+          bundTotal = bundA+bundB;
+    document.getElementById('sum').innerHTML =
+      `<b>Total:</b> ${bundTotal} min | <b>A-tid:</b> ${bundA} min | <b>B-tid:</b> ${bundB} min`;
+
+    let ekstra=0;
+    if(bundTotal>720) ekstra=bundTotal-720;
+    else if(bundB>210) ekstra=bundB-210;
+    ekstra+=sum.overtid;
+    document.getElementById('ekstra').innerText =
+      `1–4 minutter: ${ekstra} min (${ekstra*4} min)`;
+    document.getElementById('overtid').innerText =
+      `Overtid: ${sum.overtid} min`;
+
+    gemData();
+    window.scrollTo(0,scrollY);
+  }
+
+  function toggleRadio(el){
+    if(el.checked){
+      if(el.dataset.clicked){ el.checked=false; el.dataset.clicked=""; }
+      else {
+        document.querySelectorAll(`input[name="${el.name}"]`)
+          .forEach(r=>r.dataset.clicked="");
+        el.dataset.clicked="true";
+      }
+    }
+    gemData();
+  }
+
+  function sletTur(i){
+    if(confirm("Slet tur?")){
+      ture.splice(i,1);
+      opdaterTabel();
+    }
+  }
+
+  function gemData(){
+    localStorage.setItem("tidsregistrering",JSON.stringify({
+      ture,
+      fremskudt:document.getElementById('fremskudtPause').value,
+      beredskab:document.getElementById('beredskab').value,
+      pause1:document.querySelector('input[name="pause1"]:checked')?.value||"",
+      pause2:document.querySelector('input[name="pause2"]:checked')?.value||""
+    }));
+    localStorage.setItem("tidsregistreringStartSlut", JSON.stringify({
+      start: document.getElementById('starttid').value,
+      slut:  document.getElementById('sluttid').value
+    }));
+  }
+
+  function hentData(){
+    const ss = JSON.parse(localStorage.getItem("tidsregistreringStartSlut"));
+    if(ss){
+      if(ss.start) document.getElementById('starttid').value = ss.start;
+      if(ss.slut)  document.getElementById('sluttid').value = ss.slut;
+    }
+    const d = JSON.parse(localStorage.getItem("tidsregistrering"));
+    if(!d) return;
+    ture=d.ture||[];
+    document.getElementById('fremskudtPause').value=d.fremskudt||"0";
+    document.getElementById('beredskab').value=d.beredskab||"";
+    if(d.pause1) document.querySelector(`input[name="pause1"][value="${d.pause1}"]`)?.click();
+    if(d.pause2) document.querySelector(`input[name="pause2"][value="${d.pause2}"]`)?.click();
+    opdaterTabel();
+  }
+
+  function gemSomBillede(){
+    html2canvas(document.getElementById("altIndhold")).then(canvas=>{
+      const a=document.createElement("a");
+      a.href=canvas.toDataURL();
+      a.download=`tidsregistrering_${new Date().toISOString().slice(0,10)}.png`;
+      a.click();
+    });
+  }
+
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('service-worker.js');
+  }
+</script>
+</body>
+</html>
