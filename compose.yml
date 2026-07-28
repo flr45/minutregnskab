@@ -1,0 +1,9 @@
+services:
+  minutregnskab:
+    build: .
+    container_name: minutregnskab
+
+    ports:
+      - "8000:8000"
+
+    restart: unless-stopped
