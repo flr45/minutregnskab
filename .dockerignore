@@ -1,0 +1,14 @@
+.git
+.github
+.gitignore
+.env
+.env.*
+__pycache__/
+*.py[cod]
+*.log
+.venv/
+venv/
+.pytest_cache/
+.DS_Store
+README.md
+compose.yml
