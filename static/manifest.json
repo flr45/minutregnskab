@@ -1,0 +1,10 @@
+{
+  "name": "Tidsregistrering",
+  "short_name": "Tidsreg",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f4f8",
+  "theme_color": "#007BFF",
+  "icons": []
+}
