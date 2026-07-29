@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b1020">
+  <title>Administration · Minutregnskab</title>
+  <style>
+    :root{color-scheme:dark;--bg:#070b14;--surface:#111827;--border:#263249;--text:#f5f7fb;--muted:#9aa8bd;--blue:#5b8cff;--green:#3ddc97;--amber:#ffca5c}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#111b31 0,#070b14 42%);color:var(--text);font:16px/1.45 system-ui,-apple-system,sans-serif}.shell{max-width:1050px;margin:auto;padding:24px}.top{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:22px}.top h1{margin:0}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 15px;border:1px solid var(--border);border-radius:13px;background:#202b40;color:var(--text);font-weight:750;text-decoration:none}.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px}.stat,.card{background:rgba(17,24,39,.95);border:1px solid var(--border);border-radius:18px;padding:18px}.stat span{display:block;color:var(--muted);font-size:13px}.stat strong{font-size:28px}.table-wrap{overflow:auto}.users{width:100%;border-collapse:collapse;min-width:720px}.users th,.users td{text-align:left;padding:14px 12px;border-bottom:1px solid var(--border)}.users th{color:var(--muted);font-size:13px}.name{font-weight:800}.username,.date{color:var(--muted);font-size:13px}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:rgba(61,220,151,.13);color:#8df0c1;font-size:12px;font-weight:800}.badge.user{background:rgba(91,140,255,.13);color:#a9c1ff}@media(max-width:650px){.shell{padding:16px}.top{align-items:flex-start}.stats{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="top"><div><div class="username">Minutregnskab</div><h1>Brugeradministration</h1></div><a class="btn" href="{{ url_for('index') }}">← Tilbage til appen</a></div>
+    <div class="stats"><div class="stat"><span>Oprettede brugere</span><strong>{{ users|length }}</strong></div><div class="stat"><span>Gemte vagter i alt</span><strong>{{ users|sum(attribute='shift_count') }}</strong></div></div>
+    <section class="card table-wrap">
+      <table class="users">
+        <thead><tr><th>Navn</th><th>Brugernavn</th><th>Rolle</th><th>Gemte vagter</th><th>Oprettet</th><th>Seneste login</th></tr></thead>
+        <tbody>
+          {% for user in users %}
+          <tr>
+            <td><div class="name">{{ (user.first_name ~ ' ' ~ user.last_name).strip() or 'Navn ikke registreret' }}</div></td>
+            <td><div class="username">{{ user.username }}</div></td>
+            <td><span class="badge {{ '' if user.is_admin else 'user' }}">{{ 'Administrator' if user.is_admin else 'Bruger' }}</span></td>
+            <td>{{ user.shift_count }}</td>
+            <td><div class="date">{{ user.created_at or '—' }}</div></td>
+            <td><div class="date">{{ user.last_login_at or 'Aldrig' }}</div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

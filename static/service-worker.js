@@ -1,4 +1,4 @@
-const CACHE_NAME = "minutregnskab-v2-1";
+const CACHE_NAME = "minutregnskab-v2-2";
 const APP_SHELL = [
   "/",
   "/login",
@@ -9,35 +9,25 @@ const APP_SHELL = [
 ];
 
 self.addEventListener("install", event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(APP_SHELL))
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)));
 });
 
 self.addEventListener("activate", event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(
-        keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
-      ))
+      .then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("message", event => {
-  if (event.data?.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("fetch", event => {
   const request = event.request;
   const url = new URL(request.url);
-
-  if (request.method !== "GET" || url.pathname.startsWith("/api/")) {
-    return;
-  }
+  if (request.method !== "GET" || url.pathname.startsWith("/api/") || url.pathname.startsWith("/admin")) return;
 
   if (request.mode === "navigate") {
     event.respondWith(
@@ -49,9 +39,7 @@ self.addEventListener("fetch", event => {
           }
           return response;
         })
-        .catch(async () => {
-          return await caches.match(request) || await caches.match("/") || Response.error();
-        })
+        .catch(async () => await caches.match(request) || await caches.match("/") || Response.error())
     );
     return;
   }
@@ -67,7 +55,6 @@ self.addEventListener("fetch", event => {
           return response;
         })
         .catch(() => cached);
-
       return cached || network;
     })
   );
