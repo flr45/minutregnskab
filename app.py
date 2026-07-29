@@ -10,6 +10,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE = Path(os.environ.get("DATABASE_PATH", BASE_DIR / "data" / "minutregnskab.db"))
+MAX_SAVED_SHIFTS = 10
 
 app = Flask(__name__)
 app.config.update(
@@ -25,6 +26,7 @@ def get_db():
     DATABASE.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DATABASE)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
     return connection
 
 
@@ -50,8 +52,28 @@ def init_db():
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
+
+            CREATE INDEX IF NOT EXISTS idx_shifts_user_recent
+            ON shifts(user_id, shift_date DESC, start_time DESC, id DESC);
             """
         )
+
+
+def prune_old_shifts(db, user_id):
+    db.execute(
+        """
+        DELETE FROM shifts
+        WHERE user_id = ?
+          AND id NOT IN (
+              SELECT id
+              FROM shifts
+              WHERE user_id = ?
+              ORDER BY shift_date DESC, start_time DESC, id DESC
+              LIMIT ?
+          )
+        """,
+        (user_id, user_id, MAX_SAVED_SHIFTS),
+    )
 
 
 @app.before_request
@@ -142,14 +164,16 @@ def index():
 @login_required
 def list_shifts():
     with get_db() as db:
+        prune_old_shifts(db, session["user_id"])
         rows = db.execute(
             """
             SELECT id, shift_date, start_time, station, payload, created_at, updated_at
             FROM shifts
             WHERE user_id = ?
             ORDER BY shift_date DESC, start_time DESC, id DESC
+            LIMIT ?
             """,
-            (session["user_id"],),
+            (session["user_id"], MAX_SAVED_SHIFTS),
         ).fetchall()
 
     result = []
@@ -197,7 +221,9 @@ def save_shift():
             )
             saved_id = cursor.lastrowid
 
-    return jsonify({"id": saved_id, "saved": True})
+        prune_old_shifts(db, session["user_id"])
+
+    return jsonify({"id": saved_id, "saved": True, "maximum": MAX_SAVED_SHIFTS})
 
 
 @app.delete("/api/shifts/<int:shift_id>")
