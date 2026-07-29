@@ -1,24 +1,17 @@
-const CACHE_NAME = "tidsregistrering-v4";
-
-const LOCAL_ASSETS = [
+const CACHE_NAME = "minutregnskab-v2-1";
+const APP_SHELL = [
   "/",
-  "/static/manifest.json"
-];
-
-const OPTIONAL_ASSETS = [
-  "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
+  "/login",
+  "/register",
+  "/static/manifest.json",
+  "/static/icon.svg",
+  "/static/js/calculations.js"
 ];
 
 self.addEventListener("install", event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(async cache => {
-        await cache.addAll(LOCAL_ASSETS);
-        await Promise.allSettled(
-          OPTIONAL_ASSETS.map(asset => cache.add(asset))
-        );
-      })
-      .then(() => self.skipWaiting())
+      .then(cache => cache.addAll(APP_SHELL))
   );
 });
 
@@ -26,43 +19,56 @@ self.addEventListener("activate", event => {
   event.waitUntil(
     caches.keys()
       .then(keys => Promise.all(
-        keys
-          .filter(key => key !== CACHE_NAME)
-          .map(key => caches.delete(key))
+        keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
       ))
       .then(() => self.clients.claim())
   );
 });
 
+self.addEventListener("message", event => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") {
+  const request = event.request;
+  const url = new URL(request.url);
+
+  if (request.method !== "GET" || url.pathname.startsWith("/api/")) {
     return;
   }
 
-  if (event.request.mode === "navigate") {
+  if (request.mode === "navigate") {
     event.respondWith(
-      fetch(event.request)
+      fetch(request)
         .then(response => {
           if (response.ok) {
             const copy = response.clone();
-            event.waitUntil(
-              caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy))
-            );
+            event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.put(request, copy)));
           }
           return response;
         })
         .catch(async () => {
-          return (
-            await caches.match(event.request) ||
-            await caches.match("/") ||
-            Response.error()
-          );
+          return await caches.match(request) || await caches.match("/") || Response.error();
         })
     );
     return;
   }
 
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
+    caches.match(request).then(cached => {
+      const network = fetch(request)
+        .then(response => {
+          if (response.ok && url.origin === self.location.origin) {
+            const copy = response.clone();
+            event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.put(request, copy)));
+          }
+          return response;
+        })
+        .catch(() => cached);
+
+      return cached || network;
+    })
   );
 });

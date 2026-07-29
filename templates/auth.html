@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1220">
+  <title>{{ 'Opret bruger' if mode == 'register' else 'Log ind' }} · Minutregnskab</title>
+  <style>
+    :root{color-scheme:dark;--bg:#070b12;--panel:#111827;--line:#263247;--text:#f8fafc;--muted:#94a3b8;--accent:#3b82f6;--danger:#f87171}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at top,#172554 0,#070b12 42%);font-family:Inter,system-ui,-apple-system,sans-serif;color:var(--text)}
+    .card{width:min(100%,420px);padding:28px;border:1px solid var(--line);border-radius:22px;background:rgba(17,24,39,.94);box-shadow:0 24px 80px rgba(0,0,0,.45)}
+    h1{margin:0 0 8px;font-size:1.8rem}.lead{margin:0 0 24px;color:var(--muted);line-height:1.5}.field{margin-bottom:16px}label{display:block;margin-bottom:7px;font-weight:700}input{width:100%;padding:14px;border:1px solid var(--line);border-radius:12px;background:#0b1220;color:var(--text);font:inherit}input:focus{outline:2px solid var(--accent);outline-offset:1px}.button{width:100%;padding:14px;border:0;border-radius:12px;background:var(--accent);color:white;font:inherit;font-weight:800;cursor:pointer}.error{padding:12px;margin-bottom:16px;border:1px solid #7f1d1d;border-radius:12px;background:#450a0a;color:#fecaca}.switch{text-align:center;margin:18px 0 0;color:var(--muted)}a{color:#93c5fd}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>{{ 'Opret bruger' if mode == 'register' else 'Velkommen tilbage' }}</h1>
+    <p class="lead">{{ 'Opret din personlige konto. Dine vagter gemmes kun på din bruger.' if mode == 'register' else 'Log ind for at fortsætte til dit minutregnskab.' }}</p>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <form method="post" autocomplete="on">
+      <div class="field">
+        <label for="username">Brugernavn</label>
+        <input id="username" name="username" minlength="3" maxlength="80" required autofocus autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="password">Adgangskode</label>
+        <input id="password" name="password" type="password" minlength="8" required autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}">
+      </div>
+      <button class="button" type="submit">{{ 'Opret bruger' if mode == 'register' else 'Log ind' }}</button>
+    </form>
+    <p class="switch">
+      {% if mode == 'register' %}Har du allerede en bruger? <a href="{{ url_for('login') }}">Log ind</a>{% else %}Ny bruger? <a href="{{ url_for('register') }}">Opret konto</a>{% endif %}
+    </p>
+  </main>
+</body>
+</html>

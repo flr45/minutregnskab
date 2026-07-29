@@ -1,10 +1,31 @@
 {
-  "name": "Tidsregistrering",
-  "short_name": "Tidsreg",
+  "id": "/",
+  "name": "Minutregnskab",
+  "short_name": "Minutter",
+  "description": "Minutregnskab til ambulancepersonale med A-tid, B-tid, overtid og vagthistorik.",
+  "lang": "da-DK",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f4f4f8",
-  "theme_color": "#007BFF",
-  "icons": []
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "portrait-primary",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ny vagt",
+      "short_name": "Ny vagt",
+      "url": "/?action=new-shift",
+      "icons": [{"src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml"}]
+    }
+  ]
 }
