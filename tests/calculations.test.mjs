@@ -15,9 +15,19 @@ test("B-tid starter først 16 timer efter vagtstart", () => {
   assert.deepEqual({ a: after.a, b: after.b }, { a: 0, b: 60 });
 });
 
-test("overtid holdes adskilt fra 1-4 minutter", () => {
-  const summary = calculateSummary([{ start: "07:30", end: "08:00" }], "07:30", 0);
+test("før-vagt-overtid tælles separat", () => {
+  const trip = calculateTrip("07:20", "08:00", "07:30");
+  assert.deepEqual({ a: trip.a, b: trip.b, overtime: trip.overtime }, { a: 30, b: 0, overtime: 10 });
+});
+
+test("efter-vagt-overtid holdes ude af 1-4 minutter", () => {
+  const summary = calculateSummary(
+    [{ start: "07:30", end: "08:00", afterShift: true }],
+    "07:30",
+    0,
+  );
   assert.equal(summary.overtime, 30);
+  assert.equal(summary.total, 0);
   assert.equal(summary.oneToFour, 0);
 });
 
