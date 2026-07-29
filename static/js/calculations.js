@@ -11,11 +11,35 @@ export function normalizeToShiftMinute(clockMinutes, shiftStart) {
   return clockMinutes >= shiftStart ? clockMinutes : clockMinutes + 1440;
 }
 
-export function calculateTrip(startValue, endValue, shiftStartValue) {
-  const shiftStart = timeToMinutes(shiftStartValue);
-  let start = normalizeToShiftMinute(timeToMinutes(startValue), shiftStart);
-  let end = normalizeToShiftMinute(timeToMinutes(endValue), shiftStart);
+function normalizeTrip(trip, shiftStart) {
+  const startClock = timeToMinutes(trip.start);
+  const endClock = timeToMinutes(trip.end);
+
+  if (trip.afterShift) {
+    let start = normalizeToShiftMinute(startClock, shiftStart) + 1440;
+    let end = normalizeToShiftMinute(endClock, shiftStart) + 1440;
+    if (end <= start) end += 1440;
+    return { start, end };
+  }
+
+  // En tur, der begynder kort før mødetid og slutter efter mødetid,
+  // behandles som før-vagt-overtid i stedet for som næste døgn.
+  if (startClock < shiftStart && endClock >= shiftStart) {
+    return { start: startClock, end: endClock };
+  }
+
+  let start = normalizeToShiftMinute(startClock, shiftStart);
+  let end = normalizeToShiftMinute(endClock, shiftStart);
   if (end <= start) end += 1440;
+  return { start, end };
+}
+
+export function calculateTrip(startValue, endValue, shiftStartValue, options = {}) {
+  const shiftStart = timeToMinutes(shiftStartValue);
+  const { start, end } = normalizeTrip(
+    { start: startValue, end: endValue, afterShift: Boolean(options.afterShift) },
+    shiftStart,
+  );
 
   const shiftEnd = shiftStart + 1440;
   const bStart = shiftStart + 960;
@@ -24,7 +48,7 @@ export function calculateTrip(startValue, endValue, shiftStartValue) {
   let overtime = 0;
 
   for (let minute = start; minute < end; minute += 1) {
-    if (minute >= shiftEnd) overtime += 1;
+    if (minute < shiftStart || minute >= shiftEnd) overtime += 1;
     else if (minute >= bStart) b += 1;
     else a += 1;
   }
@@ -34,26 +58,21 @@ export function calculateTrip(startValue, endValue, shiftStartValue) {
 
 export function tripsOverlap(first, second, shiftStartValue) {
   const shiftStart = timeToMinutes(shiftStartValue);
-  const normalizeTrip = (trip) => {
-    let start = normalizeToShiftMinute(timeToMinutes(trip.start), shiftStart);
-    let end = normalizeToShiftMinute(timeToMinutes(trip.end), shiftStart);
-    if (end <= start) end += 1440;
-    return { start, end };
-  };
-  const a = normalizeTrip(first);
-  const b = normalizeTrip(second);
+  const a = normalizeTrip(first, shiftStart);
+  const b = normalizeTrip(second, shiftStart);
   return a.start < b.end && b.start < a.end;
 }
 
 export function calculateSummary(trips, shiftStartValue, advancedBreak = 0) {
   const raw = trips.reduce((sum, trip) => {
-    const result = calculateTrip(trip.start, trip.end, shiftStartValue);
-    sum.total += result.total;
+    const result = calculateTrip(trip.start, trip.end, shiftStartValue, {
+      afterShift: trip.afterShift,
+    });
     sum.a += result.a;
     sum.b += result.b;
     sum.overtime += result.overtime;
     return sum;
-  }, { total: 0, a: 0, b: 0, overtime: 0 });
+  }, { a: 0, b: 0, overtime: 0 });
 
   const breakMinutes = Math.max(0, Number(advancedBreak) || 0);
   const deductedFromA = Math.min(raw.a, breakMinutes);
