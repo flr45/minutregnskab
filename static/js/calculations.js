@@ -63,6 +63,41 @@ export function tripsOverlap(first, second, shiftStartValue) {
   return a.start < b.end && b.start < a.end;
 }
 
+export function evaluatePauseStatus(
+  trips,
+  shiftStartValue,
+  intervalStart,
+  intervalEnd,
+  elapsedMinutes,
+) {
+  if (elapsedMinutes < intervalStart) return null;
+
+  const visibleEnd = Math.min(intervalEnd, elapsedMinutes);
+  const segments = trips
+    .map(trip => calculateTrip(trip.start, trip.end, shiftStartValue, {
+      afterShift: trip.afterShift,
+    }))
+    .map(({ start, end }) => [
+      Math.max(intervalStart, start - timeToMinutes(shiftStartValue)),
+      Math.min(visibleEnd, end - timeToMinutes(shiftStartValue)),
+    ])
+    .filter(([start, end]) => end > start && start < visibleEnd)
+    .sort((first, second) => first[0] - second[0]);
+
+  let cursor = intervalStart;
+  for (const [segmentStart, segmentEnd] of segments) {
+    if (segmentStart > cursor) {
+      const gap = segmentStart - cursor;
+      if (gap >= 30) return "";
+      if (gap > 0) return "Afbrudt";
+    }
+    cursor = Math.max(cursor, segmentEnd);
+  }
+
+  if (visibleEnd > cursor && visibleEnd - cursor >= 30) return "";
+  return elapsedMinutes >= intervalEnd ? "Ikke afholdt" : null;
+}
+
 export function calculateSummary(trips, shiftStartValue, advancedBreak = 0) {
   const raw = trips.reduce((sum, trip) => {
     const result = calculateTrip(trip.start, trip.end, shiftStartValue, {
