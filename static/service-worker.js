@@ -1,4 +1,4 @@
-const CACHE_NAME = "minutregnskab-v2-5";
+const CACHE_NAME = "minutregnskab-v2-6";
 const APP_SHELL = [
   "/",
   "/login",
