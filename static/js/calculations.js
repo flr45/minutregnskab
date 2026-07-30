@@ -130,3 +130,103 @@ export function calculateSummary(trips, shiftStartValue, advancedBreak = 0) {
     oneToFourWeighted: oneToFour * 4,
   };
 }
+
+// Browserbeskyttelse af en igangværende tur og den aktive vagt.
+// Beregningsmodulet importeres på hovedsiden, så beskyttelsen følger også PWA'en.
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+  const TRIP_DRAFT_KEY = "minutregnskab-trip-draft";
+  const SHIFT_DRAFT_KEY = "minutregnskab-draft";
+  const SHIFT_BACKUP_KEY = "minutregnskab-active-shift-backup";
+  const RESET_ALLOWED_KEY = "minutregnskab-reset-allowed";
+
+  const parseJson = value => {
+    try { return JSON.parse(value); } catch { return null; }
+  };
+  const isActiveShift = value => Boolean(value?.date && value?.start);
+
+  function initialiseDraftProtection() {
+    const tripStart = document.getElementById("tripStart");
+    const tripEnd = document.getElementById("tripEnd");
+    const addTrip = document.getElementById("addTrip");
+    if (!tripStart || !tripEnd) return;
+
+    const savedTrip = parseJson(localStorage.getItem(TRIP_DRAFT_KEY)) || {};
+    if (!tripStart.value && savedTrip.start) tripStart.value = savedTrip.start;
+    if (!tripEnd.value && savedTrip.end) tripEnd.value = savedTrip.end;
+
+    const saveTripDraft = () => {
+      localStorage.setItem(TRIP_DRAFT_KEY, JSON.stringify({
+        start: tripStart.value || "",
+        end: tripEnd.value || "",
+        savedAt: Date.now(),
+      }));
+    };
+
+    for (const field of [tripStart, tripEnd]) {
+      field.addEventListener("input", saveTripDraft);
+      field.addEventListener("change", saveTripDraft);
+    }
+
+    document.addEventListener("click", event => {
+      const nowButton = event.target.closest?.("[data-now]");
+      if (nowButton) {
+        setTimeout(() => {
+          saveTripDraft();
+          if (nowButton.dataset.now === "tripStart") tripEnd.focus();
+        }, 0);
+      }
+
+      const removeButton = event.target.closest?.("[data-remove]");
+      const backup = parseJson(localStorage.getItem(SHIFT_BACKUP_KEY));
+      if (removeButton && backup?.id && Number(removeButton.dataset.remove) === Number(backup.id)) {
+        sessionStorage.setItem(RESET_ALLOWED_KEY, "1");
+      }
+    });
+
+    addTrip?.addEventListener("click", () => {
+      setTimeout(() => {
+        if (!tripStart.value && !tripEnd.value) localStorage.removeItem(TRIP_DRAFT_KEY);
+        else saveTripDraft();
+      }, 0);
+    });
+
+    // Hvis en genindlæsning eller synkronisering rydder felterne, genskabes kladden.
+    setInterval(() => {
+      const draft = parseJson(localStorage.getItem(TRIP_DRAFT_KEY));
+      if (!draft) return;
+      if (!tripStart.value && draft.start) tripStart.value = draft.start;
+      if (!tripEnd.value && draft.end) tripEnd.value = draft.end;
+    }, 500);
+
+    // Gem altid seneste gyldige aktive vagt separat.
+    const current = parseJson(localStorage.getItem(SHIFT_DRAFT_KEY));
+    if (isActiveShift(current)) localStorage.setItem(SHIFT_BACKUP_KEY, JSON.stringify(current));
+
+    setInterval(() => {
+      const active = parseJson(localStorage.getItem(SHIFT_DRAFT_KEY));
+      const backup = parseJson(localStorage.getItem(SHIFT_BACKUP_KEY));
+      if (isActiveShift(active)) {
+        localStorage.setItem(SHIFT_BACKUP_KEY, JSON.stringify(active));
+        return;
+      }
+
+      if (!isActiveShift(backup) || sessionStorage.getItem(RESET_ALLOWED_KEY) === "1") return;
+      const header = document.getElementById("shiftHeader")?.textContent?.trim();
+      if (header === "Ingen aktiv vagt") {
+        localStorage.setItem(SHIFT_DRAFT_KEY, JSON.stringify(backup));
+        if (sessionStorage.getItem("minutregnskab-restoring-shift") !== "1") {
+          sessionStorage.setItem("minutregnskab-restoring-shift", "1");
+          location.reload();
+        }
+      }
+    }, 750);
+
+    setTimeout(() => sessionStorage.removeItem("minutregnskab-restoring-shift"), 2000);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initialiseDraftProtection, { once: true });
+  } else {
+    setTimeout(initialiseDraftProtection, 0);
+  }
+}
