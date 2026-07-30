@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calculateSummary, calculateTrip, tripsOverlap } from "../static/js/calculations.js";
+import { calculateSummary, calculateTrip, evaluatePauseStatus, tripsOverlap } from "../static/js/calculations.js";
 
 test("A-tid over 510 minutter flyttes ikke til B-tid", () => {
   const summary = calculateSummary([{ start: "07:30", end: "17:00" }], "07:30", 0);
@@ -43,4 +43,43 @@ test("overlappende ture opdages over midnat", () => {
     tripsOverlap({ start: "23:50", end: "00:20" }, { start: "00:10", end: "00:40" }, "07:30"),
     true,
   );
+});
+
+
+test("en tur inden for pausens første 30 minutter registrerer afbrudt pause", () => {
+  const result = evaluatePauseStatus(
+    [{ start: "10:40", end: "11:08" }],
+    "07:30",
+    180,
+    360,
+    291,
+  );
+  assert.equal(result, "Afbrudt");
+});
+
+test("30 sammenhængende minutter før første tur betyder afholdt pause", () => {
+  const result = evaluatePauseStatus(
+    [{ start: "11:05", end: "11:30" }],
+    "07:30",
+    180,
+    360,
+    250,
+  );
+  assert.equal(result, "");
+});
+
+test("ingen 30 minutters pause ved intervallets slutning betyder ikke afholdt", () => {
+  const result = evaluatePauseStatus(
+    [{ start: "10:30", end: "13:20" }],
+    "07:30",
+    180,
+    360,
+    360,
+  );
+  assert.equal(result, "Ikke afholdt");
+});
+
+test("en igangværende kort pause markeres ikke før den afbrydes", () => {
+  const result = evaluatePauseStatus([], "07:30", 180, 360, 190);
+  assert.equal(result, null);
 });
