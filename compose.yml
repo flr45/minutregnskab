@@ -3,14 +3,14 @@ services:
     build: .
     container_name: minutregnskab
     restart: unless-stopped
-    ports:
-      - "8000:8000"
     environment:
       DATABASE_PATH: /app/data/minutregnskab.db
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY skal angives i .env}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
     volumes:
       - minutregnskab_data:/app/data
+    networks:
+      - proxy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
       interval: 30s
@@ -21,3 +21,7 @@ services:
 volumes:
   minutregnskab_data:
     name: minutregnskab_data
+
+networks:
+  proxy:
+    external: true
