@@ -39,14 +39,14 @@
 <header><div class="topbar"><div class="brand"><div class="logo">MR</div><div><h1>Minutregnskab</h1><small id="shiftHeader">Ingen aktiv vagt</small></div></div><div id="networkStatus" class="status"><span class="dot"></span><span>Online</span></div></div></header>
 <main class="shell" id="captureArea">
   <div id="updateNotice" class="notice">En ny version er klar. <button class="btn small" id="applyUpdate">Opdatér nu</button></div>
-  <section class="card account"><div><span class="muted">Logget ind som</span><div><strong>{{ full_name }}</strong></div></div><div class="account-actions">{% if is_admin %}<a class="btn ghost small" href="{{ url_for('admin') }}">Admin</a>{% endif %}<form method="post" action="{{ url_for('logout') }}"><button class="btn ghost small" type="submit">Log ud</button></form></div></section>
+  <section class="card account"><div><span class="muted">Logget ind som</span><div><strong>{{ full_name }}</strong></div></div><div class="account-actions"><a class="btn ghost small" href="{{ url_for('account') }}">Konto</a>{% if is_admin %}<a class="btn ghost small" href="{{ url_for('admin') }}">Admin</a>{% endif %}<form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn ghost small" type="submit">Log ud</button></form></div></section>
   <section class="card"><h2>Registrér tur</h2><div class="grid"><div><label for="station">Beredskab / station</label><input id="station" maxlength="120" placeholder="Fx Ambulance Slagelse"></div><div></div><div><label for="tripStart">Starttid</label><div class="time-row"><input type="time" id="tripStart"><button class="btn secondary" type="button" data-now="tripStart">Nu</button></div></div><div><label for="tripEnd">Sluttid</label><div class="time-row"><input type="time" id="tripEnd"><button class="btn secondary" type="button" data-now="tripEnd">Nu</button></div></div></div><div style="margin-top:12px"><button id="addTrip" class="btn wide" disabled>Tilføj tur</button></div></section>
   <section class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Ture</h2><span class="muted" id="tripCount">0 ture</span></div><div id="tripList"><p class="muted">Ingen ture registreret endnu.</p></div></section>
   <section class="card"><h2>Pauser</h2><div class="grid"><div><label for="advancedBreak">Fremskudt pause</label><select id="advancedBreak"><option value="0">Ingen</option><option value="30">30 minutter</option><option value="60">60 minutter</option></select></div><div></div><div><label>Pause 1</label><div class="pause-options"><label class="chip"><input type="radio" name="pause1" value="Afbrudt"><span>Afbrudt</span></label><label class="chip"><input type="radio" name="pause1" value="Ikke afholdt"><span>Ikke afholdt</span></label></div><p class="pause-note" id="pause1Note"></p></div><div><label>Pause 2</label><div class="pause-options"><label class="chip"><input type="radio" name="pause2" value="Afbrudt"><span>Afbrudt</span></label><label class="chip"><input type="radio" name="pause2" value="Ikke afholdt"><span>Ikke afholdt</span></label></div><p class="pause-note" id="pause2Note"></p></div></div></section>
   <section class="card"><h2>Resultat</h2><div class="grid4"><div class="summary"><span>Total</span><strong id="sumTotal">0</strong><small> min</small></div><div class="summary a"><span>A-tid</span><strong id="sumA">0</strong><small> min</small></div><div class="summary b"><span>B-tid</span><strong id="sumB">0</strong><small> min</small></div><div class="summary o"><span>Overtid</span><strong id="sumOvertime">0</strong><small> min</small></div></div><p id="oneToFour" class="muted">1–4 minutter: 0 min (0 min)</p></section>
   <section class="card" id="activeShiftCard">
     <div class="shift-info"><span class="muted">Aktuel vagt</span><h2 id="shiftTitle">Start en ny vagt</h2><p class="muted" id="shiftPeriod"></p><div class="members" id="members"></div></div>
-    <div class="sharing-box"><div class="sharing-grid"><div class="sharing-part"><h3>Del vagten</h3><p class="muted">Opret en kode, som din makker kan bruge.</p><div id="shareControls"><button class="btn secondary wide" id="createCode" disabled>Opret 6-cifret kode</button></div></div><div class="sharing-part"><h3>Deltag i makkers vagt</h3><p class="muted">Vagten gemmes permanent hos jer begge.</p><div class="join-row"><input id="joinCode" inputmode="numeric" maxlength="6" placeholder="000000"><button class="btn" id="joinShift">Deltag</button></div></div></div></div>
+    <div class="sharing-box"><div class="sharing-grid"><div class="sharing-part"><h3>Del vagten</h3><p class="muted">Opret en kode, som din makker kan bruge.</p><div id="shareControls"><button class="btn secondary wide" id="createCode" disabled>Opret 10-tegns kode</button></div></div><div class="sharing-part"><h3>Deltag i makkers vagt</h3><p class="muted">Vagten gemmes permanent hos jer begge.</p><div class="join-row"><input id="joinCode" inputmode="text" maxlength="10" placeholder="AB12CD34EF"><button class="btn" id="joinShift">Deltag</button></div></div></div></div>
   </section>
   <section class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Seneste vagter</h2><span class="muted">Maks. 10</span></div><div id="history"><p class="muted">Ingen gemte vagter.</p></div></section>
 </main>
@@ -77,6 +77,9 @@ let autosaveTimer=null;
 let pollTimer=null;
 let localDirty=false;
 let saveInFlight=false;
+const csrfToken={{ csrf_token|tojson }};
+
+function apiFetch(url,options={}){const headers=new Headers(options.headers||{});if(!["GET","HEAD","OPTIONS"].includes((options.method||"GET").toUpperCase()))headers.set("X-CSRF-Token",csrfToken);return fetch(url,{...options,headers})}
 
 function today(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}
 function nowTime(){return new Date().toTimeString().slice(0,5)}
@@ -106,7 +109,7 @@ async function saveShift(silent=false){
   const requestSignature=JSON.stringify(requestPayload);
   const body={id:state.id,shift_date:state.date,start_time:state.start,station:$("station").value.trim(),payload:requestPayload};
   try{
-    const r=await fetch("/api/shifts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const r=await apiFetch("/api/shifts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     const x=await r.json();
     if(!r.ok)throw new Error(x.error||"Kunne ikke gemme");
     const unchanged=JSON.stringify(payload())===requestSignature;
@@ -140,12 +143,12 @@ async function loadHistory(openId=null){
 }
 
 function openShift(id){const x=(window.__shifts||[]).find(v=>v.id===Number(id));if(x){applyShift(x,{clean:true});scrollTo({top:0,behavior:"smooth"})}}
-async function removeShift(id){if(!confirm("Vil du fjerne denne vagt fra din historik?"))return;if(!confirm("Er du helt sikker?"))return;const r=await fetch(`/api/shifts/${id}`,{method:"DELETE"});if(r.ok){if(state.id===Number(id))Object.assign(state,{id:null,date:null,start:null,trips:[],members:[]});localDirty=false;render();await loadHistory()}}
+async function removeShift(id){if(!confirm("Vil du fjerne denne vagt fra din historik?"))return;if(!confirm("Er du helt sikker?"))return;const r=await apiFetch(`/api/shifts/${id}`,{method:"DELETE"});if(r.ok){if(state.id===Number(id))Object.assign(state,{id:null,date:null,start:null,trips:[],members:[]});localDirty=false;render();await loadHistory()}}
 function setShiftModal(open){$("shiftModal").hidden=!open;document.body.classList.toggle("modal-open",open);if(open)setTimeout(()=>$("shiftDate").focus(),50)}
 function newShift(){if(state.trips.length&&!confirm("Start en ny vagt? Den aktuelle vagt bør gemmes først."))return;$("shiftDate").value=today();setShiftModal(true)}
-async function createCode(){if(!state.id)await saveShift(true);const r=await fetch(`/api/shifts/${state.id}/share`,{method:"POST"});const x=await r.json();if(!r.ok)return alert(x.error||"Kunne ikke oprette kode");state.shareCode=x.code;state.shareActive=true;render()}
-async function closeCode(){const r=await fetch(`/api/shifts/${state.id}/share`,{method:"DELETE"});if(r.ok){state.shareCode=null;state.shareActive=false;render()}}
-async function joinShift(){const code=$("joinCode").value.replace(/\D/g,"");const r=await fetch("/api/shifts/join",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code})});const x=await r.json();if(!r.ok)return alert(x.error||"Kunne ikke deltage");$("joinCode").value="";applyShift(x,{clean:true});await loadHistory();alert("Du er nu koblet permanent på vagten.")}
+async function createCode(){if(!state.id)await saveShift(true);const r=await apiFetch(`/api/shifts/${state.id}/share`,{method:"POST"});const x=await r.json();if(!r.ok)return alert(x.error||"Kunne ikke oprette kode");state.shareCode=x.code;state.shareActive=true;render()}
+async function closeCode(){const r=await apiFetch(`/api/shifts/${state.id}/share`,{method:"DELETE"});if(r.ok){state.shareCode=null;state.shareActive=false;render()}}
+async function joinShift(){const code=$("joinCode").value.replace(/[^A-Z0-9]/gi,"").toUpperCase();const r=await apiFetch("/api/shifts/join",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code})});const x=await r.json();if(!r.ok)return alert(x.error||"Kunne ikke deltage");$("joinCode").value="";applyShift(x,{clean:true});await loadHistory();alert("Du er nu koblet permanent på vagten.")}
 
 $("shiftForm").addEventListener("submit",e=>{e.preventDefault();const d=$("shiftDate").value,s=$("shiftStart").value;if(!d||!s)return;Object.assign(state,{id:null,date:d,start:s,trips:[],station:"",advancedBreak:0,pause1:"",pause2:"",pause1Manual:false,pause2Manual:false,isOwner:true,shareCode:null,shareActive:false,members:[]});$("station").value="";$("advancedBreak").value="0";localDirty=true;setShiftModal(false);render();queueSave()});
 $("cancelShift").onclick=()=>setShiftModal(false);
@@ -157,7 +160,7 @@ $("tripList").onclick=e=>{if(e.target.dataset.delete!==undefined){const i=Number
 $("tripList").onchange=e=>{if(!e.target.dataset.edit)return;const[i,k]=e.target.dataset.edit.split(":");state.trips[Number(i)][k]=e.target.value;render();scheduleSave()};
 for(const id of ["station","advancedBreak"]){$(id).addEventListener("change",()=>{render();scheduleSave()})}
 document.querySelectorAll('input[type=radio]').forEach(r=>r.addEventListener("click",e=>{const name=r.name,wasSelected=state[name]===r.value;if(wasSelected){e.preventDefault();if(!confirm(`Vil du fjerne valget “${r.value}” for ${name==="pause1"?"pause 1":"pause 2"} og slå automatikken til igen?`)){r.checked=true;return}state[name]="";state[`${name}Manual`]=false;r.checked=false}else{state[name]=r.value;state[`${name}Manual`]=true}render();scheduleSave()}));
-$("saveShift").onclick=()=>saveShift(false);$("newShift").onclick=newShift;$("joinShift").onclick=joinShift;$("joinCode").oninput=e=>e.target.value=e.target.value.replace(/\D/g,"").slice(0,6);
+$("saveShift").onclick=()=>saveShift(false);$("newShift").onclick=newShift;$("joinShift").onclick=joinShift;$("joinCode").oninput=e=>e.target.value=e.target.value.replace(/[^A-Z0-9]/gi,"").toUpperCase().slice(0,10);
 $("history").onclick=e=>{if(e.target.dataset.open)openShift(e.target.dataset.open);if(e.target.dataset.remove)removeShift(e.target.dataset.remove)};
 $("shareControls").onclick=e=>{if(e.target.id==="createCode")createCode();if(e.target.id==="closeCode")closeCode();if(e.target.id==="copyCode")navigator.clipboard?.writeText(state.shareCode)};
 $("exportShift").onclick=()=>{if(!state.date)return alert("Der er ingen aktiv vagt.");const blob=new Blob([JSON.stringify({date:state.date,start:state.start,station:$("station").value,payload:payload()},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`minutregnskab-${state.date}.json`;a.click();URL.revokeObjectURL(a.href)};

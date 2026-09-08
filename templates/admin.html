@@ -16,12 +16,13 @@
     <div class="stats"><div class="stat"><span>Oprettede brugere</span><strong>{{ users|length }}</strong></div><div class="stat"><span>Gemte vagter i alt</span><strong>{{ users|sum(attribute='shift_count') }}</strong></div></div>
     <section class="card table-wrap">
       <table class="users">
-        <thead><tr><th>Navn</th><th>Brugernavn</th><th>Rolle</th><th>Gemte vagter</th><th>Oprettet</th><th>Seneste login</th></tr></thead>
+        <thead><tr><th>Navn</th><th>Brugernavn</th><th>E-mail</th><th>Rolle</th><th>Gemte vagter</th><th>Oprettet</th><th>Seneste login</th></tr></thead>
         <tbody>
           {% for user in users %}
           <tr>
             <td><div class="name">{{ (user.first_name ~ ' ' ~ user.last_name).strip() or 'Navn ikke registreret' }}</div></td>
             <td><div class="username">{{ user.username }}</div></td>
+            <td><div class="username">{{ user.email or 'Ikke angivet' }}</div></td>
             <td><span class="badge {{ '' if user.is_admin else 'user' }}">{{ 'Administrator' if user.is_admin else 'Bruger' }}</span></td>
             <td>{{ user.shift_count }}</td>
             <td><div class="date">{{ user.created_at or '—' }}</div></td>

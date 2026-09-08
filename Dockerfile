@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY --chown=app:app . .
 
+RUN SECRET_KEY=build-test-secret python -m unittest discover -s tests -p 'test_*.py'
+
 USER app
 
 EXPOSE 8000
