@@ -1,8 +1,5 @@
-const CACHE_NAME = "minutregnskab-v2-10";
+const CACHE_NAME = "minutregnskab-v2-11";
 const APP_SHELL = [
-  "/",
-  "/login",
-  "/register",
   "/static/manifest.json",
   "/static/icon.svg",
   "/static/js/calculations.js"
@@ -30,17 +27,9 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET" || url.pathname.startsWith("/api/") || url.pathname.startsWith("/admin")) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request)
-        .then(response => {
-          if (response.ok) {
-            const copy = response.clone();
-            event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.put(request, copy)));
-          }
-          return response;
-        })
-        .catch(async () => await caches.match(request) || await caches.match("/") || Response.error())
-    );
+    // Authenticated HTML contains per-session data and a CSRF token. Never put
+    // navigation responses in the shared service-worker cache.
+    event.respondWith(fetch(request));
     return;
   }
 

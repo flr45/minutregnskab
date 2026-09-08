@@ -1,7 +1,9 @@
 import json
+import hmac
 import os
 import secrets
 import sqlite3
+import string
 from datetime import timedelta
 from functools import wraps
 from pathlib import Path
@@ -13,14 +15,22 @@ BASE_DIR = Path(__file__).resolve().parent
 DATABASE = Path(os.environ.get("DATABASE_PATH", BASE_DIR / "data" / "minutregnskab.db"))
 MAX_SAVED_SHIFTS = 10
 SHARE_CODE_HOURS = 30
+SHARE_CODE_LENGTH = 10
+MAX_PAYLOAD_BYTES = 64 * 1024
+SESSION_LIFETIME_HOURS = max(1, min(int(os.environ.get("SESSION_LIFETIME_HOURS", "12")), 168))
+
+SECRET_KEY = os.environ.get("SECRET_KEY", "").strip()
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY skal angives")
 
 app = Flask(__name__)
 app.config.update(
-    SECRET_KEY=os.environ.get("SECRET_KEY", "change-me-in-production"),
-    PERMANENT_SESSION_LIFETIME=timedelta(days=3650),
+    SECRET_KEY=SECRET_KEY,
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=SESSION_LIFETIME_HOURS),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("SESSION_COOKIE_SECURE", "false").lower() == "true",
+    MAX_CONTENT_LENGTH=MAX_PAYLOAD_BYTES,
 )
 
 
@@ -29,6 +39,8 @@ def get_db():
     connection = sqlite3.connect(DATABASE)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA journal_mode = WAL")
+    connection.execute("PRAGMA busy_timeout = 5000")
     return connection
 
 
@@ -80,6 +92,15 @@ def init_db():
             ON shift_members(user_id, shift_id);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_active_share_code
             ON shifts(share_code) WHERE share_code IS NOT NULL;
+
+            CREATE TABLE IF NOT EXISTS share_code_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_share_code_attempts_recent
+            ON share_code_attempts(user_id, created_at);
             """
         )
         user_columns = _column_names(db, "users")
@@ -138,6 +159,27 @@ def prune_old_shifts(db, user_id):
 @app.before_request
 def ensure_database():
     init_db()
+    session.setdefault("_csrf_token", secrets.token_urlsafe(32))
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        supplied = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token", "")
+        if not supplied or not hmac.compare_digest(supplied, session["_csrf_token"]):
+            abort(400, description="Ugyldig CSRF-token")
+
+
+@app.context_processor
+def template_security_values():
+    return {"csrf_token": session.get("_csrf_token", "")}
+
+
+@app.after_request
+def security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("Cache-Control", "no-store")
+    if request.is_secure:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    return response
 
 
 def login_required(view):
@@ -197,8 +239,9 @@ def serialize_shift(db, row, user_id):
 
 
 def create_unique_code(db):
+    alphabet = string.ascii_uppercase + string.digits
     for _ in range(30):
-        code = f"{secrets.randbelow(1_000_000):06d}"
+        code = "".join(secrets.choice(alphabet) for _ in range(SHARE_CODE_LENGTH))
         if not db.execute("SELECT 1 FROM shifts WHERE share_code = ?", (code,)).fetchone():
             return code
     raise RuntimeError("Kunne ikke oprette en unik vagt-kode.")
@@ -322,6 +365,8 @@ def save_shift():
     if not shift_date or not start_time or not isinstance(payload, dict):
         return jsonify({"error": "Ugyldige vagtdata."}), 400
     encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded.encode("utf-8")) > MAX_PAYLOAD_BYTES:
+        return jsonify({"error": "Vagtdata er for store."}), 413
     with get_db() as db:
         if shift_id:
             if not user_can_access_shift(db, int(shift_id), session["user_id"]):
@@ -382,17 +427,26 @@ def close_share(shift_id):
 @login_required
 def join_shift():
     data = request.get_json(silent=True) or {}
-    code = "".join(character for character in str(data.get("code", "")) if character.isdigit())
-    if len(code) != 6:
-        return jsonify({"error": "Vagt-koden skal være på 6 cifre."}), 400
+    code = "".join(character for character in str(data.get("code", "")).upper() if character.isalnum())
+    if len(code) != SHARE_CODE_LENGTH:
+        return jsonify({"error": f"Vagt-koden skal være på {SHARE_CODE_LENGTH} tegn."}), 400
     with get_db() as db:
+        db.execute("DELETE FROM share_code_attempts WHERE created_at < datetime('now', '-1 day')")
+        attempts = db.execute(
+            "SELECT COUNT(*) AS count FROM share_code_attempts WHERE user_id = ? AND created_at >= datetime('now', '-15 minutes')",
+            (session["user_id"],),
+        ).fetchone()["count"]
+        if attempts >= 10:
+            return jsonify({"error": "For mange kodeforsøg. Prøv igen senere."}), 429
         shift = db.execute(
             """SELECT id FROM shifts WHERE share_code = ?
                AND share_expires_at IS NOT NULL AND datetime(share_expires_at) > CURRENT_TIMESTAMP""",
             (code,),
         ).fetchone()
         if not shift:
+            db.execute("INSERT INTO share_code_attempts (user_id) VALUES (?)", (session["user_id"],))
             return jsonify({"error": "Koden findes ikke eller er udløbet."}), 404
+        db.execute("DELETE FROM share_code_attempts WHERE user_id = ?", (session["user_id"],))
         db.execute(
             "INSERT OR IGNORE INTO shift_members (shift_id, user_id) VALUES (?, ?)",
             (shift["id"], session["user_id"]),
@@ -422,7 +476,12 @@ def delete_shift(shift_id):
 
 @app.get("/health")
 def health():
-    return jsonify({"status": "ok"})
+    try:
+        with get_db() as db:
+            db.execute("SELECT 1").fetchone()
+        return jsonify({"status": "ok", "database": "ok"})
+    except sqlite3.Error:
+        return jsonify({"status": "error", "database": "unavailable"}), 503
 
 
 if __name__ == "__main__":

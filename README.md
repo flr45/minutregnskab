@@ -23,7 +23,7 @@ Et webbaseret minutregnskab udviklet til ambulancepersonale.
 ## Kør lokalt
 
 ```bash
-python app.py
+SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')" python app.py
 ```
 
 ## Kør med Docker Compose
@@ -31,6 +31,9 @@ python app.py
 ```bash
 docker compose up -d --build
 ```
+
+Kopiér `.env.example` til `.env`, angiv en lang, tilfældig `SECRET_KEY`, og
+brug `SESSION_COOKIE_SECURE=true` i produktion bag HTTPS.
 
 Appen er derefter tilgængelig på:
 
@@ -54,6 +57,9 @@ Workflowet tester builds i pull requests og publicerer kun images fra `main` ell
 docker run -d \
   --name minutregnskab \
   --restart unless-stopped \
+  -e SECRET_KEY="DIN_LANGE_TILFÆLDIGE_NØGLE" \
+  -e SESSION_COOKIE_SECURE=true \
+  -v minutregnskab_data:/app/data \
   -p 8000:8000 \
   ghcr.io/flr45/minutregnskab:latest
 ```
