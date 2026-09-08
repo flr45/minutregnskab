@@ -1,10 +1,14 @@
-import json
+import hashlib
 import hmac
+import json
 import os
 import secrets
+import smtplib
 import sqlite3
+import ssl
 import string
 from datetime import timedelta
+from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
 
@@ -18,6 +22,15 @@ SHARE_CODE_HOURS = 30
 SHARE_CODE_LENGTH = 10
 MAX_PAYLOAD_BYTES = 64 * 1024
 SESSION_LIFETIME_HOURS = max(1, min(int(os.environ.get("SESSION_LIFETIME_HOURS", "12")), 168))
+PASSWORD_RESET_MINUTES = max(10, min(int(os.environ.get("PASSWORD_RESET_MINUTES", "60")), 240))
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "").strip()
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_FROM = os.environ.get("SMTP_FROM", "").strip()
+SMTP_STARTTLS = os.environ.get("SMTP_STARTTLS", "true").lower() == "true"
+SMTP_SSL = os.environ.get("SMTP_SSL", "false").lower() == "true"
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "").strip()
 if not SECRET_KEY:
@@ -56,9 +69,11 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE COLLATE NOCASE,
                 password_hash TEXT NOT NULL,
+                email TEXT,
                 first_name TEXT NOT NULL DEFAULT '',
                 last_name TEXT NOT NULL DEFAULT '',
                 is_admin INTEGER NOT NULL DEFAULT 0,
+                auth_version INTEGER NOT NULL DEFAULT 0,
                 last_login_at TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -101,18 +116,39 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_share_code_attempts_recent
             ON share_code_attempts(user_id, created_at);
+
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at TEXT NOT NULL,
+                used_at TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user
+            ON password_reset_tokens(user_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expiry
+            ON password_reset_tokens(expires_at);
             """
         )
         user_columns = _column_names(db, "users")
         user_migrations = {
+            "email": "ALTER TABLE users ADD COLUMN email TEXT",
             "first_name": "ALTER TABLE users ADD COLUMN first_name TEXT NOT NULL DEFAULT ''",
             "last_name": "ALTER TABLE users ADD COLUMN last_name TEXT NOT NULL DEFAULT ''",
             "is_admin": "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0",
+            "auth_version": "ALTER TABLE users ADD COLUMN auth_version INTEGER NOT NULL DEFAULT 0",
             "last_login_at": "ALTER TABLE users ADD COLUMN last_login_at TEXT",
         }
         for column, statement in user_migrations.items():
             if column not in user_columns:
                 db.execute(statement)
+        db.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
+               ON users(email COLLATE NOCASE)
+               WHERE email IS NOT NULL AND email <> ''"""
+        )
 
         shift_columns = _column_names(db, "shifts")
         shift_migrations = {
@@ -185,7 +221,16 @@ def security_headers(response):
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("user_id"):
+        user_id = session.get("user_id")
+        if not user_id:
+            return redirect(url_for("login"))
+        with get_db() as db:
+            user = db.execute(
+                "SELECT auth_version FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+        if not user or int(user["auth_version"]) != int(session.get("auth_version", -1)):
+            session.clear()
             return redirect(url_for("login"))
         return view(*args, **kwargs)
     return wrapped
@@ -208,6 +253,7 @@ def establish_session(user):
     session["username"] = user["username"]
     session["full_name"] = " ".join(part for part in [user["first_name"], user["last_name"]] if part).strip()
     session["is_admin"] = bool(user["is_admin"])
+    session["auth_version"] = int(user["auth_version"])
 
 
 def user_can_access_shift(db, shift_id, user_id):
@@ -247,16 +293,68 @@ def create_unique_code(db):
     raise RuntimeError("Kunne ikke oprette en unik vagt-kode.")
 
 
+def normalize_email(value):
+    email = str(value or "").strip().lower()
+    if len(email) > 254 or email.count("@") != 1:
+        return ""
+    local, domain = email.rsplit("@", 1)
+    if not local or not domain or " " in email:
+        return ""
+    return email
+
+
+def password_reset_url(token):
+    if not PUBLIC_BASE_URL:
+        raise RuntimeError("PUBLIC_BASE_URL skal angives for password reset")
+    return f"{PUBLIC_BASE_URL}{url_for('reset_password', token=token)}"
+
+
+def send_password_reset_email(recipient, first_name, reset_url):
+    if not SMTP_HOST or not SMTP_FROM:
+        raise RuntimeError("SMTP_HOST og SMTP_FROM skal angives for password reset")
+
+    message = EmailMessage()
+    message["Subject"] = "Nulstil din adgangskode til Minutregnskab"
+    message["From"] = SMTP_FROM
+    message["To"] = recipient
+    greeting = f"Hej {first_name}," if first_name else "Hej,"
+    message.set_content(
+        f"""{greeting}
+
+Du har bedt om at nulstille din adgangskode til Minutregnskab.
+
+Åbn dette link for at vælge en ny adgangskode:
+{reset_url}
+
+Linket udløber om {PASSWORD_RESET_MINUTES} minutter og kan kun bruges én gang.
+
+Hvis du ikke har bedt om dette, kan du ignorere mailen.
+"""
+    )
+
+    context = ssl.create_default_context()
+    smtp_class = smtplib.SMTP_SSL if SMTP_SSL else smtplib.SMTP
+    with smtp_class(SMTP_HOST, SMTP_PORT, timeout=15, context=context) if SMTP_SSL else smtp_class(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+        if not SMTP_SSL and SMTP_STARTTLS:
+            server.starttls(context=context)
+        if SMTP_USERNAME:
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.send_message(message)
+
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     error = None
     if request.method == "POST":
         first_name = request.form.get("first_name", "").strip()
         last_name = request.form.get("last_name", "").strip()
+        email = normalize_email(request.form.get("email", ""))
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         if len(first_name) < 2 or len(last_name) < 2:
             error = "Skriv både fornavn og efternavn."
+        elif not email:
+            error = "Skriv en gyldig e-mailadresse."
         elif len(username) < 3:
             error = "Brugernavnet skal være mindst 3 tegn."
         elif len(password) < 8:
@@ -267,18 +365,26 @@ def register():
                     user_count = db.execute("SELECT COUNT(*) AS count FROM users").fetchone()["count"]
                     cursor = db.execute(
                         """INSERT INTO users
-                           (username, password_hash, first_name, last_name, is_admin, last_login_at)
-                           VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
-                        (username, generate_password_hash(password), first_name, last_name, 1 if user_count == 0 else 0),
+                           (username, password_hash, email, first_name, last_name, is_admin, last_login_at)
+                           VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+                        (
+                            username,
+                            generate_password_hash(password),
+                            email,
+                            first_name,
+                            last_name,
+                            1 if user_count == 0 else 0,
+                        ),
                     )
                     user = db.execute(
-                        "SELECT id, username, first_name, last_name, is_admin FROM users WHERE id = ?",
+                        """SELECT id, username, first_name, last_name, is_admin, auth_version
+                           FROM users WHERE id = ?""",
                         (cursor.lastrowid,),
                     ).fetchone()
                 establish_session(user)
                 return redirect(url_for("index"))
             except sqlite3.IntegrityError:
-                error = "Brugernavnet er allerede i brug."
+                error = "Brugernavn eller e-mail er allerede i brug."
     return render_template("auth.html", mode="register", error=error)
 
 
@@ -292,7 +398,8 @@ def login():
         password = request.form.get("password", "")
         with get_db() as db:
             user = db.execute(
-                "SELECT id, username, password_hash, first_name, last_name, is_admin FROM users WHERE username = ?",
+                """SELECT id, username, password_hash, first_name, last_name, is_admin, auth_version
+                   FROM users WHERE username = ?""",
                 (username,),
             ).fetchone()
             valid = bool(user and check_password_hash(user["password_hash"], password))
@@ -304,6 +411,151 @@ def login():
             establish_session(user)
             return redirect(url_for("index"))
     return render_template("auth.html", mode="login", error=error)
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    message = None
+    if request.method == "POST":
+        identifier = request.form.get("identifier", "").strip()
+        normalized = normalize_email(identifier)
+        token = None
+        recipient = None
+        first_name = ""
+
+        with get_db() as db:
+            db.execute(
+                "DELETE FROM password_reset_tokens WHERE expires_at <= CURRENT_TIMESTAMP OR used_at IS NOT NULL"
+            )
+            if normalized:
+                user = db.execute(
+                    """SELECT id, email, first_name
+                       FROM users WHERE email IS NOT NULL AND lower(email) = lower(?)""",
+                    (normalized,),
+                ).fetchone()
+            else:
+                user = db.execute(
+                    "SELECT id, email, first_name FROM users WHERE username = ?",
+                    (identifier,),
+                ).fetchone()
+
+            if user and user["email"]:
+                recent = db.execute(
+                    """SELECT 1 FROM password_reset_tokens
+                       WHERE user_id = ? AND created_at >= datetime('now', '-60 seconds')
+                       LIMIT 1""",
+                    (user["id"],),
+                ).fetchone()
+                if not recent:
+                    token = secrets.token_urlsafe(32)
+                    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+                    db.execute(
+                        "UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE user_id = ? AND used_at IS NULL",
+                        (user["id"],),
+                    )
+                    db.execute(
+                        """INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+                           VALUES (?, ?, datetime('now', ?))""",
+                        (user["id"], token_hash, f"+{PASSWORD_RESET_MINUTES} minutes"),
+                    )
+                    recipient = user["email"]
+                    first_name = user["first_name"]
+
+        if token and recipient:
+            try:
+                send_password_reset_email(recipient, first_name, password_reset_url(token))
+            except Exception:
+                app.logger.exception("Kunne ikke sende password-reset mail")
+
+        message = (
+            "Hvis oplysningerne matcher en konto med registreret e-mail, "
+            "sender vi et link til nulstilling af adgangskoden."
+        )
+    return render_template("auth.html", mode="forgot", message=message)
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    if len(token) > 200:
+        return render_template("auth.html", mode="reset", invalid_token=True), 400
+
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with get_db() as db:
+        reset = db.execute(
+            """SELECT prt.id, prt.user_id, u.username
+               FROM password_reset_tokens prt
+               JOIN users u ON u.id = prt.user_id
+               WHERE prt.token_hash = ?
+                 AND prt.used_at IS NULL
+                 AND prt.expires_at > CURRENT_TIMESTAMP""",
+            (token_hash,),
+        ).fetchone()
+
+    if not reset:
+        return render_template("auth.html", mode="reset", invalid_token=True), 400
+
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+        if len(password) < 8:
+            error = "Adgangskoden skal være mindst 8 tegn."
+        elif password != confirm_password:
+            error = "De to adgangskoder er ikke ens."
+        else:
+            with get_db() as db:
+                current = db.execute(
+                    """SELECT id, user_id FROM password_reset_tokens
+                       WHERE token_hash = ? AND used_at IS NULL
+                         AND expires_at > CURRENT_TIMESTAMP""",
+                    (token_hash,),
+                ).fetchone()
+                if not current:
+                    return render_template("auth.html", mode="reset", invalid_token=True), 400
+                db.execute(
+                    """UPDATE users
+                       SET password_hash = ?, auth_version = auth_version + 1
+                       WHERE id = ?""",
+                    (generate_password_hash(password), current["user_id"]),
+                )
+                db.execute(
+                    "UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE user_id = ? AND used_at IS NULL",
+                    (current["user_id"],),
+                )
+            session.clear()
+            return render_template(
+                "auth.html",
+                mode="reset_done",
+                message="Din adgangskode er ændret. Du kan nu logge ind med den nye adgangskode.",
+            )
+
+    return render_template("auth.html", mode="reset", error=error, invalid_token=False)
+
+
+@app.route("/account", methods=["GET", "POST"])
+@login_required
+def account():
+    error = None
+    message = None
+    if request.method == "POST":
+        email = normalize_email(request.form.get("email", ""))
+        if not email:
+            error = "Skriv en gyldig e-mailadresse."
+        else:
+            try:
+                with get_db() as db:
+                    db.execute("UPDATE users SET email = ? WHERE id = ?", (email, session["user_id"]))
+                message = "Din e-mailadresse er gemt."
+            except sqlite3.IntegrityError:
+                error = "E-mailadressen bruges allerede af en anden konto."
+
+    with get_db() as db:
+        user = db.execute(
+            """SELECT username, email, first_name, last_name
+               FROM users WHERE id = ?""",
+            (session["user_id"],),
+        ).fetchone()
+    return render_template("account.html", user=user, error=error, message=message)
 
 
 @app.post("/logout")
@@ -328,7 +580,7 @@ def index():
 def admin():
     with get_db() as db:
         users = db.execute(
-            """SELECT u.id, u.username, u.first_name, u.last_name, u.is_admin,
+            """SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.is_admin,
                       u.created_at, u.last_login_at, COUNT(DISTINCT sm.shift_id) AS shift_count
                FROM users u LEFT JOIN shift_members sm ON sm.user_id = u.id
                GROUP BY u.id ORDER BY u.created_at DESC, u.id DESC"""
