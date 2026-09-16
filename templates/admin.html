@@ -6,31 +6,117 @@
   <meta name="theme-color" content="#0b1020">
   <title>Administration · Minutregnskab</title>
   <style>
-    :root{color-scheme:dark;--bg:#070b14;--surface:#111827;--border:#263249;--text:#f5f7fb;--muted:#9aa8bd;--blue:#5b8cff;--green:#3ddc97;--amber:#ffca5c}
-    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#111b31 0,#070b14 42%);color:var(--text);font:16px/1.45 system-ui,-apple-system,sans-serif}.shell{max-width:1050px;margin:auto;padding:24px}.top{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:22px}.top h1{margin:0}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 15px;border:1px solid var(--border);border-radius:13px;background:#202b40;color:var(--text);font-weight:750;text-decoration:none}.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px}.stat,.card{background:rgba(17,24,39,.95);border:1px solid var(--border);border-radius:18px;padding:18px}.stat span{display:block;color:var(--muted);font-size:13px}.stat strong{font-size:28px}.table-wrap{overflow:auto}.users{width:100%;border-collapse:collapse;min-width:720px}.users th,.users td{text-align:left;padding:14px 12px;border-bottom:1px solid var(--border)}.users th{color:var(--muted);font-size:13px}.name{font-weight:800}.username,.date{color:var(--muted);font-size:13px}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:rgba(61,220,151,.13);color:#8df0c1;font-size:12px;font-weight:800}.badge.user{background:rgba(91,140,255,.13);color:#a9c1ff}@media(max-width:650px){.shell{padding:16px}.top{align-items:flex-start}.stats{grid-template-columns:1fr}}
+    :root{color-scheme:dark;--bg:#070b14;--surface:#111827;--surface2:#0e1626;--border:#263249;--text:#f5f7fb;--muted:#9aa8bd;--blue:#5b8cff;--green:#3ddc97;--amber:#ffca5c;--red:#ff7c8c}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#111b31 0,#070b14 42%);color:var(--text);font:16px/1.45 system-ui,-apple-system,sans-serif}.shell{max-width:1180px;margin:auto;padding:24px}.top{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:22px}.top h1{margin:0}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 15px;border:1px solid var(--border);border-radius:13px;background:#202b40;color:var(--text);font-weight:750;text-decoration:none;cursor:pointer}.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}.stat,.card{background:rgba(17,24,39,.95);border:1px solid var(--border);border-radius:18px;padding:18px}.stat span{display:block;color:var(--muted);font-size:13px}.stat strong{font-size:28px}.toolbar{display:flex;gap:12px;align-items:end;margin-bottom:18px}.toolbar .field{flex:1}.field label{display:block;color:var(--muted);font-size:13px;font-weight:700;margin-bottom:7px}.field input,.station-select{width:100%;min-height:44px;border:1px solid var(--border);border-radius:12px;background:#0a1220;color:var(--text);padding:10px 12px;font:inherit}.notice{margin-bottom:16px;padding:12px 14px;border-radius:12px;border:1px solid rgba(61,220,151,.35);background:rgba(61,220,151,.09);color:#a7f3d0}.notice.error{border-color:rgba(255,124,140,.4);background:rgba(255,124,140,.09);color:#ffc0c8}.section-title{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:24px 0 10px}.section-title h2{margin:0;font-size:20px}.count{color:var(--muted);font-size:13px}.station-card{margin-bottom:14px;padding:0;overflow:hidden}.station-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:15px 18px;background:var(--surface2);border-bottom:1px solid var(--border)}.station-name{font-size:18px;font-weight:850}.station-meta{color:var(--muted);font-size:13px}.table-wrap{overflow:auto}.users{width:100%;border-collapse:collapse;min-width:880px}.users th,.users td{text-align:left;padding:13px 12px;border-bottom:1px solid var(--border);vertical-align:middle}.users tr:last-child td{border-bottom:0}.users th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}.name{font-weight:800}.username,.date,.email{color:var(--muted);font-size:13px}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:rgba(61,220,151,.13);color:#8df0c1;font-size:12px;font-weight:800}.badge.user{background:rgba(91,140,255,.13);color:#a9c1ff}.station-form{display:flex;gap:8px;align-items:center}.station-select{min-width:180px;min-height:38px;padding:7px 9px}.save{min-height:38px;padding:7px 11px}.empty{padding:18px;color:var(--muted)}.unassigned .station-head{background:rgba(255,202,92,.07)}.unassigned .station-name{color:#ffe19a}@media(max-width:760px){.shell{padding:16px}.top{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:1fr}.toolbar{align-items:stretch;flex-direction:column}.toolbar .btn{width:100%}.station-head{align-items:flex-start;flex-direction:column}}
   </style>
 </head>
 <body>
   <main class="shell">
-    <div class="top"><div><div class="username">Minutregnskab</div><h1>Brugeradministration</h1></div><a class="btn" href="{{ url_for('index') }}">← Tilbage til appen</a></div>
-    <div class="stats"><div class="stat"><span>Oprettede brugere</span><strong>{{ users|length }}</strong></div><div class="stat"><span>Gemte vagter i alt</span><strong>{{ users|sum(attribute='shift_count') }}</strong></div></div>
-    <section class="card table-wrap">
-      <table class="users">
-        <thead><tr><th>Navn</th><th>Brugernavn</th><th>Rolle</th><th>Gemte vagter</th><th>Oprettet</th><th>Seneste login</th></tr></thead>
-        <tbody>
-          {% for user in users %}
-          <tr>
-            <td><div class="name">{{ (user.first_name ~ ' ' ~ user.last_name).strip() or 'Navn ikke registreret' }}</div></td>
-            <td><div class="username">{{ user.username }}</div></td>
-            <td><span class="badge {{ '' if user.is_admin else 'user' }}">{{ 'Administrator' if user.is_admin else 'Bruger' }}</span></td>
-            <td>{{ user.shift_count }}</td>
-            <td><div class="date">{{ user.created_at or '—' }}</div></td>
-            <td><div class="date">{{ user.last_login_at or 'Aldrig' }}</div></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="top">
+      <div><div class="username">Minutregnskab</div><h1>Brugeradministration</h1></div>
+      <a class="btn" href="{{ url_for('index') }}">← Tilbage til appen</a>
+    </div>
+
+    {% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
+    {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
+
+    <div class="stats">
+      <div class="stat"><span>Oprettede brugere</span><strong>{{ users|length }}</strong></div>
+      <div class="stat"><span>Stationer</span><strong>{{ stations|length }}</strong></div>
+      <div class="stat"><span>Gemte vagter i alt</span><strong>{{ users|sum(attribute='shift_count') }}</strong></div>
+    </div>
+
+    <section class="card">
+      <form class="toolbar" method="post" action="{{ url_for('admin_create_station') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="field">
+          <label for="station-name">Opret ny station</label>
+          <input id="station-name" name="name" maxlength="80" placeholder="F.eks. Slagelse" required>
+        </div>
+        <button class="btn primary" type="submit">+ Opret station</button>
+      </form>
+      <div class="username">Stationen bliver straks tilgængelig i rullemenuen ved alle brugere. Eksisterende brugere bliver stående under “Uden station”, indtil du placerer dem.</div>
     </section>
+
+    {% if unassigned_users %}
+    <div class="section-title"><h2>Skal placeres</h2><span class="count">{{ unassigned_users|length }} bruger{{ '' if unassigned_users|length == 1 else 'e' }}</span></div>
+    <section class="card station-card unassigned">
+      <div class="station-head"><div><div class="station-name">Uden station</div><div class="station-meta">Brugere som endnu ikke er tilknyttet en station</div></div></div>
+      <div class="table-wrap">
+        <table class="users">
+          <thead><tr><th>Navn</th><th>Brugernavn</th><th>E-mail</th><th>Rolle</th><th>Gemte vagter</th><th>Seneste login</th><th>Station</th></tr></thead>
+          <tbody>
+            {% for user in unassigned_users %}
+            <tr>
+              <td><div class="name">{{ (user.first_name ~ ' ' ~ user.last_name).strip() or 'Navn ikke registreret' }}</div></td>
+              <td><div class="username">{{ user.username }}</div></td>
+              <td><div class="email">{{ user.email or 'Ikke angivet' }}</div></td>
+              <td><span class="badge {{ '' if user.is_admin else 'user' }}">{{ 'Administrator' if user.is_admin else 'Bruger' }}</span></td>
+              <td>{{ user.shift_count }}</td>
+              <td><div class="date">{{ user.last_login_at or 'Aldrig' }}</div></td>
+              <td>
+                <form class="station-form" method="post" action="{{ url_for('admin_set_user_station', user_id=user.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <select class="station-select" name="station_id" aria-label="Station for {{ user.username }}">
+                    <option value="" selected>Uden station</option>
+                    {% for station in stations %}<option value="{{ station.id }}">{{ station.name }}</option>{% endfor %}
+                  </select>
+                  <button class="btn save" type="submit">Gem</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endif %}
+
+    <div class="section-title"><h2>Stationer</h2><span class="count">{{ stations|length }} i alt</span></div>
+
+    {% if station_groups %}
+      {% for group in station_groups %}
+      <section class="card station-card">
+        <div class="station-head">
+          <div><div class="station-name">{{ group.station.name }}</div><div class="station-meta">Oprettet {{ group.station.created_at or '—' }}</div></div>
+          <div class="station-meta">{{ group.users|length }} bruger{{ '' if group.users|length == 1 else 'e' }}</div>
+        </div>
+        {% if group.users %}
+        <div class="table-wrap">
+          <table class="users">
+            <thead><tr><th>Navn</th><th>Brugernavn</th><th>E-mail</th><th>Rolle</th><th>Gemte vagter</th><th>Seneste login</th><th>Station</th></tr></thead>
+            <tbody>
+              {% for user in group.users %}
+              <tr>
+                <td><div class="name">{{ (user.first_name ~ ' ' ~ user.last_name).strip() or 'Navn ikke registreret' }}</div></td>
+                <td><div class="username">{{ user.username }}</div></td>
+                <td><div class="email">{{ user.email or 'Ikke angivet' }}</div></td>
+                <td><span class="badge {{ '' if user.is_admin else 'user' }}">{{ 'Administrator' if user.is_admin else 'Bruger' }}</span></td>
+                <td>{{ user.shift_count }}</td>
+                <td><div class="date">{{ user.last_login_at or 'Aldrig' }}</div></td>
+                <td>
+                  <form class="station-form" method="post" action="{{ url_for('admin_set_user_station', user_id=user.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <select class="station-select" name="station_id" aria-label="Station for {{ user.username }}">
+                      <option value="">Uden station</option>
+                      {% for station in stations %}<option value="{{ station.id }}" {{ 'selected' if user.station_id == station.id else '' }}>{{ station.name }}</option>{% endfor %}
+                    </select>
+                    <button class="btn save" type="submit">Gem</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="empty">Der er endnu ingen brugere på denne station.</div>
+        {% endif %}
+      </section>
+      {% endfor %}
+    {% else %}
+      <section class="card"><div class="empty">Der er endnu ikke oprettet nogen stationer.</div></section>
+    {% endif %}
   </main>
 </body>
 </html>

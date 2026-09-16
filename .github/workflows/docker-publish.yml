@@ -43,7 +43,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
             type=ref,event=tag
-            type=sha
+            type=sha,format=long
 
       - name: Byg og publicér image
         uses: docker/build-push-action@v6

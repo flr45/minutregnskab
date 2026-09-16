@@ -7,6 +7,7 @@ services:
       DATABASE_PATH: /app/data/minutregnskab.db
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY skal angives i .env}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SESSION_LIFETIME_HOURS: ${SESSION_LIFETIME_HOURS:-12}
     volumes:
       - minutregnskab_data:/app/data
     networks:
