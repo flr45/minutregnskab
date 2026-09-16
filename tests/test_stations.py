@@ -19,7 +19,12 @@ class StationAdminTests(unittest.TestCase):
     def csrf_token(self, client=None):
         client = client or self.client
         with client.session_transaction() as session:
-            return session["_csrf_token"]
+            token = session.get("_csrf_token")
+        if not token:
+            client.get("/")
+            with client.session_transaction() as session:
+                token = session["_csrf_token"]
+        return token
 
     def register(self, client, *, username, email, first_name="Test", last_name="Bruger"):
         client.get("/register")
